@@ -3,23 +3,24 @@ import numpy as np
 
 boltz = 5.67 * 1e-8  # W/m^2/K^4
 
+
 @xs.process
 class Spacecraft:
-    A_inc = xs.variable(
-        intent="in", description="space facing area", default=1.0, groups="sc_vars"
-    )
-    A_rad = xs.variable(intent="in", description="earth facing area", default=1.0)
-    absorb = xs.variable(
+    radius = xs.variable(
         intent="in",
-        description="spacecraft absorptivity",
-        default=0.96,
-        groups="sc_vars",
+        description="spacecraft radius [m]",
+        default=0.2111,
     )
     emis = xs.variable(
         intent="in", description="spacecraft emissivity", default=0.9, groups="sc_vars"
     )
+    absorb = xs.variable(
+        intent="in",
+        description="spacecraft absorptivity",
+        groups="sc_vars",
+    )
     mass = xs.variable(
-        intent="in", description="spacecraft mass", default=12.0
+        intent="in", description="spacecraft mass [kg]", default=4.0
     )  # kg
     spec_heat = xs.variable(
         intent="in", description="spacecraft specific heat", default=897.0
@@ -31,12 +32,24 @@ class Spacecraft:
         groups="sc_vars",
     )  # @
 
+    A_inc = xs.variable(
+        intent="out",
+        description="earth/ sun facing area",
+        default=1.0,
+        groups="sc_vars",
+    )
+    A_rad = xs.variable(
+        intent="out", description="space facing area", default=1.0, groups="sc_vars"
+    )
+
     heat_capacity = xs.variable(
         intent="out", description="spacecraft heat capacity", groups="sc_vars"
     )  # J/K
 
     def initialize(self):
         self.heat_capacity = self.spec_heat * self.mass
+        self.A_inc = np.pi * self.radius ** 2
+        self.A_rad = 4 * np.pi * self.radius ** 2
 
 
 @xs.process
@@ -44,15 +57,15 @@ class Orbit:
     R = xs.variable(intent="in", description="body radius", default=6.3781e6)  # meters
     h = xs.variable(intent="in", description="orbit altitude", default=525e3)  # meters
     tau = xs.variable(
-        intent="in", description="orbit period", default=90 * 60, groups='orb_vars'
+        intent="in", description="orbit period", default=90 * 60, groups="orb_vars"
     )  # orbital period, seconds
     case = xs.variable(intent="in", description="hot/ cold case", default="hot")
     beta = xs.variable(intent="in", description="beta, radians", default=0)
 
-    f_E = xs.variable(intent="out", description="eclipse fraction", groups='orb_vars')
-    q_sol = xs.variable(intent="out", description="solar loading", groups='orb_vars')
-    albedo = xs.variable(intent="out", description="earth albedo", groups='orb_vars')
-    q_ir = xs.variable(intent="out", description="earth IR", groups='orb_vars')
+    f_E = xs.variable(intent="out", description="eclipse fraction", groups="orb_vars")
+    q_sol = xs.variable(intent="out", description="solar loading", groups="orb_vars")
+    albedo = xs.variable(intent="out", description="earth albedo", groups="orb_vars")
+    q_ir = xs.variable(intent="out", description="earth IR", groups="orb_vars")
 
     def initialize(self):
         # Solar radiation at parhelion and aphelion
@@ -86,12 +99,6 @@ class SingleNode:
     T_init = xs.variable(intent="in", description="initial temperature", default=290.0)
     T_out = xs.variable(intent="out", description="model temperature")
 
-    # tau = xs.foreign(Orbit, "tau")
-    # q_sol = xs.foreign(Orbit, "q_sol", intent="in")
-    # f_E = xs.foreign(Orbit, "f_E", intent="in")
-    # q_ir = xs.foreign(Orbit, "q_ir", intent="in")
-    # albedo = xs.foreign(Orbit, "albedo", intent="in")
-
     orb_vars = xs.group_dict("orb_vars")
     sc_vars = xs.group_dict("sc_vars")
 
@@ -104,18 +111,18 @@ class SingleNode:
     def run_step(self, dt):
 
         # eclipse function
-        orb_frac = (self.time % self.orb_vars[("orbit", "tau")]) / self.orb_vars[("orbit", "tau")]
-        if  orb_frac >= self.orb_vars[("orbit", "f_E")]:
+        orb_frac = (self.time % self.orb_vars[("orbit", "tau")]) / self.orb_vars[
+            ("orbit", "tau")
+        ]
+        if orb_frac >= self.orb_vars[("orbit", "f_E")]:
             sol_rad = 1
         else:
             sol_rad = 0
 
         # heat from incident radiation from Earth IR
-        # Q1 = self.q_ir * self.A_inc
         Q1 = self.orb_vars[("orbit", "q_ir")] * self.sc_vars[("spacecraft", "A_inc")]
 
         # heat from incident radiation from Sun + Earthshine
-        # Q2 = (1 + self.albedo) * self.q_sol * self.A_inc * sol_rad * self.sc_absorb
         Q2 = (
             (1 + self.orb_vars[("orbit", "albedo")])
             * self.orb_vars[("orbit", "q_sol")]
@@ -129,7 +136,7 @@ class SingleNode:
 
         # heat from emited area to space
         Q4 = (
-            self.sc_vars[("spacecraft", "A_inc")]
+            self.sc_vars[("spacecraft", "A_rad")]
             * boltz
             * self.sc_vars[("spacecraft", "emis")]
             * self.T_out ** 4
