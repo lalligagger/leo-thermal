@@ -6,42 +6,63 @@ boltz = 5.67 * 1e-8  # W/m^2/K^4
 
 @xs.process
 class Spacecraft:
+    """
+    A process to ingest and compute spacecraft (SC) properties.
+    """
+
+    # In vars
     radius = xs.variable(
         intent="in",
         description="spacecraft radius [m]",
         default=0.2111,
     )
     emis = xs.variable(
-        intent="in", description="spacecraft emissivity", default=0.9, groups="sc_vars"
+        intent="in",
+        description="spacecraft emissivity",
+        default=0.9,
+        groups="sc_vars",
     )
     mass = xs.variable(
-        intent="in", description="spacecraft mass [kg]", default=4.0
-    )  # kg
+        intent="in",
+        description="spacecraft mass [kg]",
+        default=4.0,
+    )
     spec_heat = xs.variable(
-        intent="in", description="spacecraft specific heat", default=897.0
-    )  # J/(kg*K)
+        intent="in",
+        description="spacecraft specific heat [J/(kg*K)]",
+        default=897.0,
+    )
     Q_gen = xs.variable(
         intent="in",
-        description="spacecraft power dissipation",
+        description="spacecraft power dissipation [W]",
         default=15.0,
         groups="sc_vars",
-    )  # @
+    )
 
+    # Out vars
     A_inc = xs.variable(
         intent="out",
-        description="earth/ sun facing area",
+        description="earth/ sun facing area [m^2]",
         default=1.0,
         groups="sc_vars",
     )
     A_rad = xs.variable(
-        intent="out", description="space facing area", default=1.0, groups="sc_vars"
+        intent="out",
+        description="space facing area [m^2]",
+        default=1.0,
+        groups="sc_vars",
     )
 
     heat_capacity = xs.variable(
-        intent="out", description="spacecraft heat capacity", groups="sc_vars"
-    )  # J/K
+        intent="out",
+        description="spacecraft heat capacity [J/K]",
+        groups="sc_vars",
+    )
 
     def initialize(self):
+        """
+        Initialize Spacecraft.
+        """
         self.heat_capacity = self.spec_heat * self.mass
         self.A_inc = np.pi * self.radius ** 2
         self.A_rad = 4 * np.pi * self.radius ** 2
@@ -49,25 +70,72 @@ class Spacecraft:
 
 @xs.process
 class Orbit:
-    R = xs.variable(intent="in", description="body radius", default=6.3781e6)  # meters
-    h = xs.variable(intent="in", description="orbit altitude", default=525e3)  # meters
-    tau = xs.variable(
-        intent="in", description="orbit period", default=90 * 60, groups="orb_vars"
-    )  # orbital period, seconds
-    case = xs.variable(intent="in", description="hot/ cold case", default="hot")
-    beta = xs.variable(intent="in", description="beta, radians", default=0)
+    """
+    A process to ingest and compute spacecraft (SC) properties.
+    """
 
-    f_E = xs.variable(intent="out", description="eclipse fraction", groups="orb_vars")
-    q_sol = xs.variable(intent="out", description="solar loading", groups="orb_vars")
-    albedo = xs.variable(intent="out", description="earth albedo", groups="orb_vars")
-    q_ir = xs.variable(intent="out", description="earth IR", groups="orb_vars")
+    # In vars
+    R = xs.variable(
+        intent="in",
+        description="orbiting body (Earth) radius [m]",
+        default=6.3781e6,
+    )
+    h = xs.variable(
+        intent="in",
+        description="satellite orbit altitude [m]",
+        default=525e3,
+    )
+    tau = xs.variable(
+        intent="in",
+        description="orbit period [s]",
+        default=90 * 60,
+        groups="orb_vars",
+    )
+    case = xs.variable(
+        intent="in",
+        description="chose orbit hot/ cold case",
+        default="hot",
+    )
+    beta = xs.variable(
+        intent="in",
+        description="orbit plane vs. sun beta angle [rad]",
+        default=0,
+    )
+
+    # Out vars
+    f_E = xs.variable(
+        intent="out",
+        description="orbit eclipse fraction",
+        groups="orb_vars",
+    )
+    q_sol = xs.variable(
+        intent="out",
+        description="solar loading [W/m^2]",
+        groups="orb_vars",
+    )
+    q_ir = xs.variable(
+        intent="out",
+        description="earth IR loading [W/m^2]",
+        groups="orb_vars",
+    )
+    albedo = xs.variable(
+        intent="out",
+        description="earth albedo loading [W/m^2]",
+        groups="orb_vars",
+    )
 
     def initialize(self):
+        """
+        Define fraction of orbit spent in eclipse based on period, geometry, 
+        and beta angle.
+        Define the solar, Earth albedo, and Earth infrared loading in [W/m^2].
+        """
         # Solar radiation at parhelion and aphelion
         q_sol = {"hot": 1414, "cold": 1322}  # W/m^2
         self.q_sol = q_sol[self.case]
 
-        beta_star = np.arcsin(self.R / (self.R + self.h))  # beta angle, radians
+        # critical beta angle, radians
+        beta_star = np.arcsin(self.R / (self.R + self.h))
         if self.beta >= beta_star:
             self.f_E = 0
         else:
@@ -89,11 +157,24 @@ class Orbit:
 
 @xs.process
 class SingleNode:
-    """Wrap single-mode thermal model in a single Process."""
+    """
+    Wrap single-mode thermal model in a single process, 
+    attached to Orbit and Spacecraft proceces.
+    """
 
-    T_init = xs.variable(intent="in", description="initial temperature", default=290.0)
-    T_out = xs.variable(intent="out", description="model temperature")
+    # In vars
+    T_init = xs.variable(
+        intent="in",
+        description="initial spacecraft temperature [K]",
+        default=290.0,
+    )
+    # Out vars
+    T_out = xs.variable(
+        intent="out",
+        description="spacecraft temperature per time step [K]",
+    )
 
+    # Foreign vars
     orb_vars = xs.group_dict("orb_vars")
     sc_vars = xs.group_dict("sc_vars")
 
@@ -104,11 +185,13 @@ class SingleNode:
 
     @xs.runtime(args="step_delta")
     def run_step(self, dt):
-
+        """
+        Runtime function for thermal model. Adds each type of heat loading and
+        increments teperature based on heat capacity/ time step.
+        """
         # eclipse function
-        orb_frac = (self.time % self.orb_vars[("orbit", "tau")]) / self.orb_vars[
-            ("orbit", "tau")
-        ]
+        orbit_mod = self.time % self.orb_vars[("orbit", "tau")]
+        orb_frac = orbit_mod / self.orb_vars[("orbit", "tau")]
         if orb_frac >= self.orb_vars[("orbit", "f_E")]:
             sol_rad = 1
         else:
@@ -135,7 +218,7 @@ class SingleNode:
             * boltz
             * self.sc_vars[("spacecraft", "emis")]
             * self.T_out ** 4
-        )  # Modified from paper to A_inc for simple radiaitor
+        )
 
         # total heat flow
         Q_dot = Q1 + Q2 + Q3 - Q4
