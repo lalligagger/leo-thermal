@@ -14,11 +14,6 @@ class Spacecraft:
     emis = xs.variable(
         intent="in", description="spacecraft emissivity", default=0.9, groups="sc_vars"
     )
-    absorb = xs.variable(
-        intent="in",
-        description="spacecraft absorptivity",
-        groups="sc_vars",
-    )
     mass = xs.variable(
         intent="in", description="spacecraft mass [kg]", default=4.0
     )  # kg
@@ -128,7 +123,7 @@ class SingleNode:
             * self.orb_vars[("orbit", "q_sol")]
             * self.sc_vars[("spacecraft", "A_inc")]
             * sol_rad
-            * self.sc_vars[("spacecraft", "absorb")]
+            * self.sc_vars[("spacecraft", "emis")]
         )
 
         # internally generated heat
