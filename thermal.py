@@ -44,15 +44,15 @@ class Orbit:
     R = xs.variable(intent="in", description="body radius", default=6.3781e6)  # meters
     h = xs.variable(intent="in", description="orbit altitude", default=525e3)  # meters
     tau = xs.variable(
-        intent="in", description="orbit period", default=90 * 60
+        intent="in", description="orbit period", default=90 * 60, groups='orb_vars'
     )  # orbital period, seconds
     case = xs.variable(intent="in", description="hot/ cold case", default="hot")
     beta = xs.variable(intent="in", description="beta, radians", default=0)
 
-    f_E = xs.variable(intent="out", description="eclipse fraction")
-    q_sol = xs.variable(intent="out", description="solar loading")
-    albedo = xs.variable(intent="out", description="earth albedo")
-    q_ir = xs.variable(intent="out", description="earth IR")
+    f_E = xs.variable(intent="out", description="eclipse fraction", groups='orb_vars')
+    q_sol = xs.variable(intent="out", description="solar loading", groups='orb_vars')
+    albedo = xs.variable(intent="out", description="earth albedo", groups='orb_vars')
+    q_ir = xs.variable(intent="out", description="earth IR", groups='orb_vars')
 
     def initialize(self):
         # Solar radiation at parhelion and aphelion
@@ -86,12 +86,13 @@ class SingleNode:
     T_init = xs.variable(intent="in", description="initial temperature", default=290.0)
     T_out = xs.variable(intent="out", description="model temperature")
 
-    tau = xs.foreign(Orbit, "tau")
-    q_sol = xs.foreign(Orbit, "q_sol", intent="in")
-    f_E = xs.foreign(Orbit, "f_E", intent="in")
-    q_ir = xs.foreign(Orbit, "q_ir", intent="in")
-    albedo = xs.foreign(Orbit, "albedo", intent="in")
+    # tau = xs.foreign(Orbit, "tau")
+    # q_sol = xs.foreign(Orbit, "q_sol", intent="in")
+    # f_E = xs.foreign(Orbit, "f_E", intent="in")
+    # q_ir = xs.foreign(Orbit, "q_ir", intent="in")
+    # albedo = xs.foreign(Orbit, "albedo", intent="in")
 
+    orb_vars = xs.group_dict("orb_vars")
     sc_vars = xs.group_dict("sc_vars")
 
     def initialize(self):
@@ -103,20 +104,21 @@ class SingleNode:
     def run_step(self, dt):
 
         # eclipse function
-        if (self.time % self.tau) / self.tau >= self.f_E:
+        orb_frac = (self.time % self.orb_vars[("orbit", "tau")]) / self.orb_vars[("orbit", "tau")]
+        if  orb_frac >= self.f_E:
             sol_rad = 1
         else:
             sol_rad = 0
 
         # heat from incident radiation from Earth IR
         # Q1 = self.q_ir * self.A_inc
-        Q1 = self.q_ir * self.sc_vars[("spacecraft", "A_inc")]
+        Q1 = self.orb_vars[("orbit", "q_ir")] * self.sc_vars[("spacecraft", "A_inc")]
 
         # heat from incident radiation from Sun + Earthshine
         # Q2 = (1 + self.albedo) * self.q_sol * self.A_inc * sol_rad * self.sc_absorb
         Q2 = (
-            (1 + self.albedo)
-            * self.q_sol
+            (1 + self.orb_vars[("orbit", "albedo")])
+            * self.orb_vars[("orbit", "q_sol")]
             * self.sc_vars[("spacecraft", "A_inc")]
             * sol_rad
             * self.sc_vars[("spacecraft", "absorb")]
