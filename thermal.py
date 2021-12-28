@@ -105,7 +105,7 @@ class SingleNode:
 
         # eclipse function
         orb_frac = (self.time % self.orb_vars[("orbit", "tau")]) / self.orb_vars[("orbit", "tau")]
-        if  orb_frac >= self.f_E:
+        if  orb_frac >= self.orb_vars[("orbit", "f_E")]:
             sol_rad = 1
         else:
             sol_rad = 0
